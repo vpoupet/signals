@@ -3,15 +3,15 @@ export default `\
 
 Init:
   Wall
-  0/2.Right
+  2/0.Right
   0/0.Half
 Wall:
   Wall
 Right:
   -Half: 1.Right
-  Half: 1.Wall 0/2.Left 1.Half
+  Half: 1.Wall 2/0.Left 1.Half
 Half:
-  -Right: 1/3.Half
+  -Right: 3/1.Half
 Left:
   -Wall: -1.Left
   Wall: 1.Right
