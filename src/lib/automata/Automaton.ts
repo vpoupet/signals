@@ -3,8 +3,13 @@ import { Configuration } from './Configuration';
 import { type Signal } from './types';
 
 
-const signalNameRE = "[A-Za-z0-9_$']+";
-const numberRE = "-?\\d+";
+const timeStepRE = new RegExp(String.raw`(?<time>[+-]?\d+)\/`);
+const coordinateRE = new RegExp(String.raw`(?<coord>[+-]?\d+)\.`);
+const signalNameRE = new RegExp(String.raw`(?<signal>[A-Za-z0-9_$']+)`);
+const ruleConditionItemRE = new RegExp(String.raw`(?<operator>[\(\)\[\]])|(${timeStepRE.source})?(${coordinateRE.source})?(?<sign>[+-])?(${signalNameRE.source})`, 'g');
+const ruleOutputItemRE = new RegExp(String.raw`(${timeStepRE.source})?(${coordinateRE.source})?(${signalNameRE.source})`, 'g');
+
+// const coordinateRE = String.raw`[+-]?\d+(,[+-]?\d+)*\.`; // for multiple dimensions
 
 class RuleParsingException extends Error {
     constructor(message: string) {
@@ -144,94 +149,87 @@ export class Automaton {
         }
     }
 
-    readConditionTokens(conditionTokens: string[]): Clause {
+    readConditionTokens(conditionTokens: RegExpExecArray["groups"][]): Clause {
         const token = conditionTokens.shift();
         if (token === undefined) {
+            // empty condition
             return new Clause();
         }
         const subclauses: Clause[] = [];
-        let negatedCondition: Clause;
-        switch (token) {
-            case "(":
-                while (conditionTokens[0] !== ")") {
-                    if (conditionTokens.length === 0) {
-                        throw new RuleParsingException("Unbalanced parentheses in condition");
+        if (token.operator !== undefined) {
+            switch (token.operator) {
+                case "(":
+                    while (conditionTokens[0].operator !== ")") {
+                        if (conditionTokens.length === 0) {
+                            throw new RuleParsingException("Unbalanced parentheses in condition");
+                        }
+                        subclauses.push(this.readConditionTokens(conditionTokens));
                     }
-                    subclauses.push(this.readConditionTokens(conditionTokens));
-                }
-                conditionTokens.shift();
-                if (subclauses.length === 1) {
-                    // conjunction with only one subclause
-                    return subclauses[0];
-                } else {
-                    return new Conjunction(subclauses);
-                }
-            case "[":
-                while (conditionTokens[0] !== "]") {
-                    if (conditionTokens.length === 0) {
-                        throw new RuleParsingException("Unbalanced parentheses in condition");
+                    conditionTokens.shift();
+                    if (subclauses.length === 1) {
+                        // conjunction with only one subclause
+                        return subclauses[0];
+                    } else {
+                        return new Conjunction(subclauses);
                     }
-                    subclauses.push(this.readConditionTokens(conditionTokens));
-                }
-                conditionTokens.shift();
-                if (subclauses.length === 1) {
-                    // disjunction with only one subclause
-                    return subclauses[0];
-                } else {
-                    return new Disjunction(subclauses);
-                }
-            case "-":
-                negatedCondition = this.readConditionTokens(conditionTokens);
-                if (negatedCondition instanceof Negation) {
-                    return negatedCondition.subclause;
-                } else {
-                    return new Negation(negatedCondition);
-                }
-            case "+":
-                return this.readConditionTokens(conditionTokens);
-            default:
-                return new Literal(Symbol.for(token));
+                case "[":
+                    while (conditionTokens[0].operator !== "]") {
+                        if (conditionTokens.length === 0) {
+                            throw new RuleParsingException("Unbalanced parentheses in condition");
+                        }
+                        subclauses.push(this.readConditionTokens(conditionTokens));
+                    }
+                    conditionTokens.shift();
+                    if (subclauses.length === 1) {
+                        // disjunction with only one subclause
+                        return subclauses[0];
+                    } else {
+                        return new Disjunction(subclauses);
+                    }
+                default:
+                    throw new RuleParsingException(`Unexpected operator ${token.operator}`);
+            }
+        } else {
+            const timeStep = parseInt(token.time) || 0;
+            const coordinate = parseInt(token.coord) || 0;
+            const signal = Symbol.for(token.signal);
+            if (token.sign === "-") {
+                return new Negation(new Literal(signal, coordinate, timeStep));
+            } else {
+                return new Literal(signal, coordinate, timeStep);
+            }
         }
     }
 
     parseCondition(conditionString: string): Clause {
-        // const tokens = conditionString.split(/(\(|\)|\[|\]|\+|-|\w+)/).filter(t => t.length > 0);
-        const tokenRE = new RegExp("(\\(|\\)|\\[|\\]|\\+|-|" + signalNameRE + ")", "g");
-        const tokens = conditionString.match(tokenRE);
-        if (tokens === null) {
-            throw new RuleParsingException("Invalid condition");
+        const tokens = [];
+        while (true) {
+            const m = ruleConditionItemRE.exec(conditionString);
+            if (m === null) {
+                break;
+            }
+            tokens.push(m.groups);
         }
         const condition = this.readConditionTokens(tokens);
         if (tokens.length > 0) {
-            throw new RuleParsingException("Invalid condition");
+            throw new RuleParsingException("Unbalanced condition");
         }
         return condition;
     }
 
     parseOutputs(outputsString: string): RuleOutput[] {
         const outputs: RuleOutput[] = [];
-        const tokenRE = new RegExp(`(((${numberRE}\\/)?${numberRE}\\.)?${signalNameRE})`, "g");
-        const tokens = outputsString.match(tokenRE);
-        if (tokens === null) {
-            throw new RuleParsingException("Invalid outputs");
-        }
-        for (const token of tokens) {
-            if (token.includes('.')) {
-                let futureStep = 1;
-                let futureStepString: string;
-                const outputSplit = token.split(".");
-                let neighborString = outputSplit[0];
-                const signalName = outputSplit[1];
-                if (neighborString.includes('/')) {
-                    [neighborString, futureStepString] = neighborString.split("/");
-                    futureStep = parseInt(futureStepString);
-                    this.maxFutureDepth = Math.max(this.maxFutureDepth, futureStep);
-                }
-                const neighbor = neighborString === '' ? 0 : parseInt(neighborString);
-                outputs.push(new RuleOutput(neighbor, Symbol.for(signalName), futureStep));
-            } else {
-                outputs.push(new RuleOutput(0, Symbol.for(token), 1));
+        // const tokenRE = new RegExp(`(((${numberRE}\\/)?${numberRE}\\.)?${signalNameRE})`, "g");
+
+        while (true) {
+            const m = ruleOutputItemRE.exec(outputsString);
+            if (m === null) {
+                break;
             }
+            const timeStepString = m.groups?.time || '1';
+            const coordinateString = m.groups?.coord || '0';
+            const signalName = m.groups?.signal;
+            outputs.push(new RuleOutput(parseInt(coordinateString), Symbol.for(signalName), parseInt(timeStepString)));
         }
         return outputs;
     }

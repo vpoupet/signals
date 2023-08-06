@@ -126,11 +126,13 @@ export class Disjunction extends Clause {
 export class Literal extends Clause {
     signal: Signal;
     position: number;
+    timeStep: number;
 
-    constructor(signal: Signal, position = 0) {
+    constructor(signal: Signal, position = 0, timeStep = 0) {
         super();
         this.signal = signal;
         this.position = position;
+        this.timeStep = timeStep;
     }
 
     eval(signals: Neighborhood): boolean {
