@@ -1,0 +1,89 @@
+@use 'sass:math';
+@import 'sass-material-colors';
+
+$signal-colors: 
+    material-color('pink', '500'),
+    material-color('deep-purple', '500'),
+    material-color('blue', '500'),
+    material-color('cyan', '500'),
+    material-color('green', '500'),
+    material-color('lime', '500'),
+    material-color('amber', '500'),
+    material-color('deep-orange', '500'),
+    material-color('grey', '500'),
+    material-color('red', '500'),
+    material-color('purple', '500'),
+    material-color('indigo', '500'),
+    material-color('light-blue', '500'),
+    material-color('teal', '500'),
+    material-color('light-green', '500'),
+    material-color('yellow', '500'),
+    material-color('orange', '500'),
+    material-color('brown', '500'),
+    material-color('blue-grey', '500'),
+    material-color('pink', '200'),
+    material-color('deep-purple', '200'),
+    material-color('blue', '200'),
+    material-color('cyan', '200'),
+    material-color('green', '200'),
+    material-color('lime', '200'),
+    material-color('amber', '200'),
+    material-color('deep-orange', '200'),
+    material-color('grey', '200'),
+    material-color('red', '200'),
+    material-color('purple', '200'),
+    material-color('indigo', '200'),
+    material-color('light-blue', '200'),
+    material-color('teal', '200'),
+    material-color('light-green', '200'),
+    material-color('yellow', '200'),
+    material-color('orange', '200'),
+    material-color('brown', '200'),
+    material-color('blue-grey', '200'),
+;
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    font-family: monospace;
+}
+
+$nb-signals-per-row: 4;
+
+@for $i from 0 through 24 {
+    .st-#{$i} {
+        width: math.div(100%, $nb-signals-per-row);
+        height: math.div(100%, $nb-signals-per-row);
+        // border-radius: 50%;
+        left: math.div(100%, $nb-signals-per-row) * ($i % $nb-signals-per-row);
+        top: math.div(100%, $nb-signals-per-row) * math.floor(math.div($i, $nb-signals-per-row));
+        position: absolute;
+        background-color: nth($signal-colors, $i+1);
+        // background-image: url(/src/assets/images/states/state#{$i}.svg);
+    }
+}
+
+/* Tooltip container */
+[data-tooltip] {
+    position: relative;
+    display: inline-block;
+}
+
+/* Tooltip text */
+[data-tooltip]:hover::before {
+    pointer-events: none;
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    padding: 5px;
+    font-size: 14px;
+    line-height: 1.2;
+    color: #fff;
+    background-color: rgba(0, 0, 0, .8);
+    border-radius: .25rem;
+}
