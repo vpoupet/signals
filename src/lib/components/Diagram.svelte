@@ -9,21 +9,19 @@
     export let settings: Settings;
 
     let initialConfiguration: Configuration;
+    let diagram: Configuration[];
+    let signalsList: Signal[];
+    let signalIndexes: Map<Signal, number>;
+
     $: {
         initialConfiguration = new Configuration(settings.nbCells);
         initialConfiguration.cells[0].add(Symbol.for("Init"));
-    }
-
-    let diagram: Configuration[];
-    $: {
         diagram = automaton.makeDiagram(initialConfiguration, settings.nbSteps);
         if (settings.timeGoesUp) {
             diagram.reverse();
         }
     }
 
-    let signalsList: Signal[];
-    let signalIndexes: Map<Signal, number>;
     $: {
         signalsList = [...automaton.getSignals()];
         signalIndexes = new Map<Signal, number>();

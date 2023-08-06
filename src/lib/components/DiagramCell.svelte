@@ -5,10 +5,9 @@
     export let signalIndexes: Map<Signal, number>;
 
     let cellSignalNames: string[];
-    $: cellSignalNames = [];
-
     let cellSignalIndexes: number[];
     $: {
+        cellSignalNames = [];
         cellSignalIndexes = [];
 
         for (const signal of cell) {
