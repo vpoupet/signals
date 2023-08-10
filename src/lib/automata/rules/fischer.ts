@@ -3,8 +3,8 @@ export default `\
 
 Init:
   Wall
-  2/0.Right
-  0/0.Half
+  4/0.Right
+  2/0.Half
 Wall:
   Wall
 Right:
