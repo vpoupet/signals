@@ -2,14 +2,22 @@ import { Clause, Conjunction, Disjunction, Literal, Negation } from './Clause';
 import { Configuration } from './Configuration';
 import { type Signal } from './types';
 
+// a time step is a number (positive or negative) followed by a slash
+const timeStepRE = /(?:(?<time>[+-]?\d+)\/)/;
+// a coordinate is a number (positive or negative) followed by a dot
+const coordinateRE = /(?:(?<coord>[+-]?\d+)\.)/;
+// a signal name is a sequence of letters, digits, and some allowed special characters
+const signalNameRE = /(?<signal>[A-Za-z0-9_$']+)/;
+// the sign of a literal is either + or -
+const signRE = /(?<sign>[+-])/;
 
-const timeStepRE = new RegExp(String.raw`(?<time>[+-]?\d+)\/`);
-const coordinateRE = new RegExp(String.raw`(?<coord>[+-]?\d+)\.`);
-const signalNameRE = new RegExp(String.raw`(?<signal>[A-Za-z0-9_$']+)`);
-const ruleConditionItemRE = new RegExp(String.raw`(?<operator>[\(\)\[\]])|(${timeStepRE.source})?(${coordinateRE.source})?(?<sign>[+-])?(${signalNameRE.source})`, 'g');
-const ruleOutputItemRE = new RegExp(String.raw`(${timeStepRE.source})?(${coordinateRE.source})?(${signalNameRE.source})`, 'g');
+// regexp mathching a single item in a rule condition
+const conditionItemRE = new RegExp(`${timeStepRE.source}?${coordinateRE.source}?${signRE.source}?${signalNameRE.source}`);
+const conditionTokensRE = new RegExp(String.raw`[\[\]()]|${conditionItemRE.source}`, 'g');
 
-// const coordinateRE = String.raw`[+-]?\d+(,[+-]?\d+)*\.`; // for multiple dimensions
+// regexp matching a single token in a rule output
+const outputItemRE = new RegExp(`${timeStepRE.source}?${coordinateRE.source}?${signalNameRE.source}`);
+const outputTokensRE = new RegExp(outputItemRE, 'g');
 
 class RuleParsingException extends Error {
     constructor(message: string) {
@@ -24,7 +32,7 @@ class RuleOutput {
     signal: Signal;
     futureStep: number;
 
-    constructor(neighbor: number, signal: Signal, futureStep = 1) {
+    constructor(signal: Signal, neighbor: number, futureStep: number = 1) {
         this.neighbor = neighbor;
         this.signal = signal;
         this.futureStep = futureStep;
@@ -149,67 +157,62 @@ export class Automaton {
         }
     }
 
-    readConditionTokens(conditionTokens: RegExpExecArray["groups"][]): Clause {
+    readConditionTokens(conditionTokens: RegExpMatchArray): Clause {
         const token = conditionTokens.shift();
         if (token === undefined) {
             // empty condition
             return new Clause();
         }
-        const subclauses: Clause[] = [];
-        if (token.operator !== undefined) {
-            switch (token.operator) {
-                case "(":
-                    while (conditionTokens[0].operator !== ")") {
-                        if (conditionTokens.length === 0) {
-                            throw new RuleParsingException("Unbalanced parentheses in condition");
-                        }
-                        subclauses.push(this.readConditionTokens(conditionTokens));
-                    }
-                    conditionTokens.shift();
-                    if (subclauses.length === 1) {
-                        // conjunction with only one subclause
-                        return subclauses[0];
-                    } else {
-                        return new Conjunction(subclauses);
-                    }
-                case "[":
-                    while (conditionTokens[0].operator !== "]") {
-                        if (conditionTokens.length === 0) {
-                            throw new RuleParsingException("Unbalanced parentheses in condition");
-                        }
-                        subclauses.push(this.readConditionTokens(conditionTokens));
-                    }
-                    conditionTokens.shift();
-                    if (subclauses.length === 1) {
-                        // disjunction with only one subclause
-                        return subclauses[0];
-                    } else {
-                        return new Disjunction(subclauses);
-                    }
-                default:
-                    throw new RuleParsingException(`Unexpected operator ${token.operator}`);
+
+        if (token === "[") {
+            const subclauses: Clause[] = [];
+            while (conditionTokens[0] !== "]") {
+                subclauses.push(this.readConditionTokens(conditionTokens));
+            }
+            conditionTokens.shift();
+            if (subclauses.length === 0) {
+                // empty disjunction
+                return new Negation(new Clause());
+            } else if (subclauses.length === 1) {
+                // disjunction with only one subclause
+                return subclauses[0];
+            } else {
+                return new Disjunction(subclauses);
+            }
+        } else if (token === "(") {
+            const subclauses: Clause[] = [];
+            while (conditionTokens[0] !== ")") {
+                subclauses.push(this.readConditionTokens(conditionTokens));
+            }
+            conditionTokens.shift();
+            if (subclauses.length === 0) {
+                // empty conjunction
+                return new Clause();
+            } else if (subclauses.length === 1) {
+                // conjunction with only one subclause
+                return subclauses[0];
+            } else {
+                return new Conjunction(subclauses);
             }
         } else {
-            const timeStep = parseInt(token.time) || 0;
-            const coordinate = parseInt(token.coord) || 0;
-            const signal = Symbol.for(token.signal);
-            if (token.sign === "-") {
-                return new Negation(new Literal(signal, coordinate, timeStep));
+            // token is a conditionItem
+            const item = conditionItemRE.exec(token);
+            if (item.groups === undefined) {
+                throw new RuleParsingException(`Invalid condition item: ${token}`);
+            }
+            const timeStep = parseInt(item.groups.time || "0");
+            const position = parseInt(item.groups.coord || "0");
+            const signal = Symbol.for(item.groups.signal);
+            if (item.groups.sign === "-") {
+                return new Negation(new Literal(signal, position, timeStep));
             } else {
-                return new Literal(signal, coordinate, timeStep);
+                return new Literal(signal, position, timeStep);
             }
         }
     }
 
     parseCondition(conditionString: string): Clause {
-        const tokens = [];
-        while (true) {
-            const m = ruleConditionItemRE.exec(conditionString);
-            if (m === null) {
-                break;
-            }
-            tokens.push(m.groups);
-        }
+        const tokens = conditionString.match(conditionTokensRE);
         const condition = this.readConditionTokens(tokens);
         if (tokens.length > 0) {
             throw new RuleParsingException("Unbalanced condition");
@@ -219,17 +222,18 @@ export class Automaton {
 
     parseOutputs(outputsString: string): RuleOutput[] {
         const outputs: RuleOutput[] = [];
-        // const tokenRE = new RegExp(`(((${numberRE}\\/)?${numberRE}\\.)?${signalNameRE})`, "g");
-
         while (true) {
-            const m = ruleOutputItemRE.exec(outputsString);
+            const m = outputTokensRE.exec(outputsString);
             if (m === null) {
                 break;
             }
-            const timeStepString = m.groups?.time || '1';
-            const coordinateString = m.groups?.coord || '0';
-            const signalName = m.groups?.signal;
-            outputs.push(new RuleOutput(parseInt(coordinateString), Symbol.for(signalName), parseInt(timeStepString)));
+            if (m.groups === undefined) {
+                throw new RuleParsingException(`Invalid output: ${m[0]}`);
+            }
+            const timeStep = parseInt(m.groups?.time || '1');
+            const position = parseInt(m.groups?.coord || '0');
+            const signal = Symbol.for(m.groups?.signal);
+            outputs.push(new RuleOutput(signal, position, timeStep));
         }
         return outputs;
     }
