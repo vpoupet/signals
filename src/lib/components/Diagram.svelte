@@ -17,9 +17,6 @@
         initialConfiguration = new Configuration(settings.nbCells);
         initialConfiguration.cells[0].add(Symbol.for("Init"));
         diagram = automaton.makeDiagram(initialConfiguration, settings.nbSteps);
-        if (settings.timeGoesUp) {
-            diagram.reverse();
-        }
     }
 
     $: {
@@ -30,9 +27,15 @@
 </script>
 
 <div class="diagram">
-    {#each diagram as row, i (i)}
-        <DiagramRow {row} {signalIndexes} />
-    {/each}
+    {#if settings.timeGoesUp}
+        {#each diagram.slice().reverse() as row, i (i)}
+            <DiagramRow {row} {signalIndexes} t={diagram.length - i - 1} />
+        {/each}
+    {:else}
+        {#each diagram as row, i (i)}
+            <DiagramRow {row} {signalIndexes} t={i} />
+        {/each}
+    {/if}
 </div>
 
 <style lang="scss">

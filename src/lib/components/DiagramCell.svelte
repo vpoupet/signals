@@ -3,6 +3,7 @@
 
     export let cell: Set<Signal>;
     export let signalIndexes: Map<Signal, number>;
+    export let t: number, x: number;
 
     let cellSignalNames: string[];
     let cellSignalIndexes: number[];
@@ -25,9 +26,7 @@
 
 <div
     class="cell"
-    data-tooltip={cellSignalNames.length > 0
-        ? cellSignalNames.join(" ")
-        : undefined}
+    data-tooltip={`${x},${t}` + (cellSignalNames.length > 0 ? `: ${cellSignalNames.join(', ')}` : "")}
 >
     {#each cellSignalIndexes as i (i)}
         <div class={`st-${i}`} />
