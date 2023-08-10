@@ -1,0 +1,12 @@
+Init: Wall 1.Diag
+Wall: Wall
+    Tick: 1.Slope
+Diag: 2/2.Diag -1.Tick
+Tick:
+    (-Slope' -Wall): -1.Tick
+Slope:
+    -Tick: 0.Slope
+    +Tick: 1.Slope'
+Slope':
+    -Tick: 0.Slope'
+    Tick: 1.Slope
