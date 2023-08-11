@@ -1,6 +1,6 @@
 import { Clause, Conjunction, Disjunction, Literal, Negation } from './Clause';
 import { Configuration } from './Configuration';
-import { type Signal } from './types';
+import { type Neighborhood, type Signal } from './types';
 
 // a time step is a number (positive or negative) followed by a slash
 const timeStepRE = /(?:(?<time>[+-]?\d+)\/)/;
@@ -39,11 +39,9 @@ class RuleOutput {
     }
 
     toString(): string {
-        if (this.futureStep === 1) {
-            return `${this.neighbor}.${Symbol.keyFor(this.signal)}`;
-        } else {
-            return `${this.neighbor}/${this.futureStep}.${Symbol.keyFor(this.signal)}`;
-        }
+        const timeStepString = this.futureStep === 1 ? "" : `${this.futureStep}/`;
+        const positionString = this.neighbor === 0 && this.futureStep === 1 ? "" : `${this.neighbor}.`;
+        return `${timeStepString}${positionString}${Symbol.keyFor(this.signal)}`;
     }
 }
 
@@ -63,14 +61,17 @@ class RuleOutput {
 class Rule {
     condition: Clause;
     outputs: RuleOutput[];
+    subRules: Rule[];
 
     constructor(condition: Clause, outputs: RuleOutput[]) {
         this.condition = condition;
         this.outputs = outputs;
+        this.subRules = [];
     }
 
-    toString() {
-        return `${this.condition.toString()}: ${this.outputs.map(output => output.toString()).join(" ")}`;
+    toString(indent: number = 0): string {
+        const ruleString = `${"  ".repeat(indent)}${this.condition.toString()}: ${this.outputs.map(output => output.toString()).join(" ")}`;
+        return [ruleString, ...this.subRules.map(subRule => subRule.toString(indent + 1))].join("\n");
     }
 
     getOutputSignals(): Set<Signal> {
@@ -78,11 +79,40 @@ class Rule {
         for (const output of this.outputs) {
             signals.add(output.signal);
         }
+        for (const subRule of this.subRules) {
+            for (const signal of subRule.getOutputSignals()) {
+                signals.add(signal);
+            }
+        }
         return signals;
     }
 
     getConditionSignals(): Set<Signal> {
-        return this.condition.getSignals();
+        const signals = new Set<Signal>();
+        for (const signal of this.condition.getSignals()) {
+            signals.add(signal);
+        }
+        for (const subRule of this.subRules) {
+            for (const signal of subRule.getConditionSignals()) {
+                signals.add(signal);
+            }
+        }
+        return signals;
+    }
+
+    applyTo(neighborhood: Neighborhood): Set<RuleOutput> {
+        const outputs = new Set<RuleOutput>();
+        if (this.condition.eval(neighborhood)) {
+            for (const output of this.outputs) {
+                outputs.add(output);
+            }
+            for (const subRule of this.subRules) {
+                for (const output of subRule.applyTo(neighborhood)) {
+                    outputs.add(output);
+                }
+            }
+        }
+        return outputs;
     }
 }
 
@@ -112,7 +142,7 @@ export class Automaton {
         this.maxNeighbor = 0;
         this.maxFutureDepth = 1;
 
-        const conditionsStack: { condition: Clause, indent: number }[] = [];
+        const rulesStack: { rule: Rule, indent: number }[] = [];
         for (let line of rulesString.split('\n')) {
             const indent = line.search(/\S|$/);    // indentation of current line
             line = line.replace(/#.*/, '').trim();  // remove comments and whitespace
@@ -127,32 +157,26 @@ export class Automaton {
                 // line has only outputs
                 outputsString = line;
             }
-            let condition: Clause;
-            let outputs: RuleOutput[];
-            while (conditionsStack.length > 0 && conditionsStack[0].indent >= indent) {
-                // remove irrelevant conditions from stack
-                conditionsStack.shift();
-            }
+            const outputs = this.parseOutputs(outputsString);
 
-            // prepare condition
+            // remove irrelevant rules from stack
+            while (rulesStack.length > 0 && rulesStack[0].indent >= indent) {
+                rulesStack.shift();
+            }
+            const parentRule = rulesStack[0]?.rule;
+
             if (conditionString) {
                 // parse condition from line
-                const lineCondition = this.parseCondition(conditionString);
-                if (conditionsStack.length === 0) {
-                    condition = lineCondition;
+                const ruleCondition = this.parseCondition(conditionString);
+                const rule = new Rule(ruleCondition, outputs);
+                rulesStack.unshift({ rule, indent });   // push rule to stack
+                if (parentRule) {
+                    parentRule.subRules.push(rule);
                 } else {
-                    condition = new Conjunction([conditionsStack[0].condition, lineCondition]);
+                    this.rules.push(rule);
                 }
-                conditionsStack.unshift({ condition, indent });   // push condition to stack
             } else {
-                // get parent condition from stack
-                condition = conditionsStack[0].condition;
-            }
-
-            if (outputsString) {
-                // parse outputs from line
-                outputs = this.parseOutputs(outputsString);
-                this.rules.push(new Rule(condition, outputs));
+                parentRule.outputs.push(...outputs);
             }
         }
     }
@@ -266,13 +290,11 @@ export class Automaton {
             for (let c = 0; c < nbCells; c++) {
                 const neighborhood = config.getNeighborhood(c, this.minNeighbor, this.maxNeighbor);
                 for (const rule of this.rules) {
-                    if (rule.condition.eval(neighborhood)) {
-                        rule.outputs.forEach(output => {
-                            const targetCell = c + output.neighbor;
-                            if (t + output.futureStep < diagram.length && 0 <= targetCell && targetCell < nbCells) {
-                                diagram[t + output.futureStep].cells[targetCell].add(output.signal);
-                            }
-                        });
+                    for (const output of rule.applyTo(neighborhood)) {
+                        const targetCell = c + output.neighbor;
+                        if (t + output.futureStep < diagram.length && 0 <= targetCell && targetCell < nbCells) {
+                            diagram[t + output.futureStep].cells[targetCell].add(output.signal);
+                        }
                     }
                 }
             }

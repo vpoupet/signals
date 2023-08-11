@@ -10,11 +10,14 @@
     nbSteps: 60,
     timeGoesUp: true,
   };
-  
+
   let rules = initialRules;
   let automaton;
 
-$: automaton = new Automaton(rules);
+  $: {
+    automaton = new Automaton(rules);
+    console.log(automaton.toString());
+  }
 </script>
 
 <main class="container">

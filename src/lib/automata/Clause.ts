@@ -140,11 +140,9 @@ export class Literal extends Clause {
     }
 
     toString(): string {
-        if (this.position === 0) {
-            return `${Symbol.keyFor(this.signal)}`;
-        } else {
-            return `${this.position}.${Symbol.keyFor(this.signal)}`;
-        }
+        const timeStepString = this.timeStep === 0 ? "" : `${this.timeStep}/`;
+        const positionString = this.position === 0 ? "" : `${this.position}.`;
+        return `${timeStepString}${positionString}${Symbol.keyFor(this.signal)}`;
     }
 
     getSignals(): Set<Signal> {
